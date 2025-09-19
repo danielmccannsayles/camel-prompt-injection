@@ -17,11 +17,14 @@ from pathlib import Path
 import cyclopts
 from agentdojo import attacks, benchmark, logging
 from agentdojo.task_suite import get_suite
+from dotenv import load_dotenv
 from openai.types.chat import ChatCompletionReasoningEffort
 
 import camel.custom_yaml  # noqa
 from camel.interpreter.interpreter import MetadataEvalMode
 from camel.models import make_tools_pipeline
+
+load_dotenv()
 
 
 def main(
