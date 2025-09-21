@@ -274,8 +274,9 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
                 output, _, exception, _, _ = result
                 log_to_file(f"Output: {output}")
                 if exception:
-                    # Use proper error formatting like privileged_llm.py
-                    formatted_error = self._format_camel_exception(exception, code)
+                    # Use the existing format_camel_exception function
+                    from camel.pipeline_elements.privileged_llm import format_camel_exception
+                    formatted_error = format_camel_exception(exception, code)
                     log_to_file(f"Exception during execution:\n{formatted_error}")
                 else:
                     log_to_file("Code executed successfully")
@@ -288,28 +289,6 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
             log_to_file(f"Traceback: {traceback.format_exc()}")
             raise
 
-    def _format_camel_exception(self, camel_exception, code):
-        """Format CaMeL exception similar to privileged_llm.py"""
-        exception = camel_exception.exception
-        if hasattr(camel_exception, "nodes") and camel_exception.nodes:
-            node = camel_exception.nodes[-1]
-            line_no = node.lineno if hasattr(node, "lineno") else "unknown"
-        else:
-            line_no = "unknown"
-
-        # Extract just the essential info
-        exception_type = type(exception).__name__
-        exception_msg = str(exception)
-
-        # Truncate if too long
-        if len(exception_msg) > 200:
-            exception_msg = exception_msg[:200] + "... (truncated)"
-
-        return f"""
-Traceback (most recent call last):
-  File "<stdin>", line {line_no}, in <module>
-{exception_type}: {exception_msg}
-"""
 
 
 def run_test():
