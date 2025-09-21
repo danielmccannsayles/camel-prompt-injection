@@ -276,6 +276,7 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
                 if exception:
                     # Use the existing format_camel_exception function
                     from camel.pipeline_elements.privileged_llm import format_camel_exception
+
                     formatted_error = format_camel_exception(exception, code)
                     log_to_file(f"Exception during execution:\n{formatted_error}")
                 else:
@@ -288,7 +289,6 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
 
             log_to_file(f"Traceback: {traceback.format_exc()}")
             raise
-
 
 
 def run_test():
