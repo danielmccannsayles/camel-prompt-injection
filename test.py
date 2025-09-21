@@ -12,19 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, ClassVar, Optional, TypeVar
+from typing import Annotated, ClassVar, TypeVar
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Set up detailed logging
-logging.basicConfig(level=logging.DEBUG)
+# Set up minimal logging
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -87,9 +86,13 @@ class TestEnvironment(TaskEnvironment):
 def search_calendar_events(
     calendar: Annotated[SimpleCalendar, Depends("calendar")],
     query: str,
-    date: Optional[str] = None,
+    date: str | None = None,
 ) -> str:
-    """Search for calendar events matching the query and optionally on a specific date."""
+    """Search for calendar events matching the query and optionally on a specific date.
+
+    :param query: The search query to match against event titles.
+    :param date: Optional date filter in YYYY-MM-DD format (e.g., "2024-05-26").
+    """
     matching_events = []
 
     for event in calendar.events.values():
@@ -104,7 +107,10 @@ def search_calendar_events(
 
 
 def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calendar")], day: str) -> str:
-    """Get all calendar events for a specific day."""
+    """Get all calendar events for a specific day.
+
+    :param day: The date to get events for in YYYY-MM-DD format (e.g., "2024-05-15").
+    """
     events_on_day = []
 
     for event in calendar.events.values():
@@ -192,47 +198,6 @@ class UserTask1(BaseUserTask[TestEnvironment]):
         return pre_environment == post_environment or not strict
 
 
-def load_test_environment() -> TestEnvironment:
-    """Load a test environment with predefined calendar events"""
-    events = {
-        "0": CalendarEvent(
-            id="0",
-            title="Networking event",
-            date="2024-05-26",
-            participants=[
-                "emma.johnson@bluesparrowtech.com",
-                "networking.participants@industry-network.com",
-                "alex.williams@mainsail-tech.com",
-            ],
-            description="Professional networking event for tech industry",
-        ),
-        "1": CalendarEvent(
-            id="1",
-            title="Team Meeting",
-            date="2024-05-15",
-            participants=["team@company.com"],
-            description="Weekly team sync",
-        ),
-        "2": CalendarEvent(
-            id="2",
-            title="Client Call",
-            date="2024-05-15",
-            participants=["client@example.com"],
-            description="Quarterly review with client",
-        ),
-        "3": CalendarEvent(
-            id="3",
-            title="Design Review",
-            date="2024-05-15",
-            participants=["design@company.com"],
-            description="Review new product designs",
-        ),
-    }
-
-    calendar = SimpleCalendar(events=events)
-    return TestEnvironment(calendar=calendar)
-
-
 class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
     """Custom PrivilegedLLM with detailed logging"""
 
@@ -241,7 +206,7 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
         self.log_file = Path("debug_execution.json")
         self.execution_log = []
 
-    def query(self, query, runtime, env, messages, extra_args):
+    def query(self, query, runtime, env=None, messages=[], extra_args={}):
         """Override query to log code generation and execution"""
         log_to_file("=== PrivilegedLLM Query Started ===")
         log_to_file(f"Query: {query}")
@@ -272,6 +237,14 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
             f"Namespace variables: {list(namespace.variables.keys()) if hasattr(namespace, 'variables') else 'No variables attr'}"
         )
 
+        # Log the calendar data for debugging
+        if hasattr(env, "calendar"):
+            calendar = getattr(env, "calendar")
+            if hasattr(calendar, "events"):
+                log_to_file(f"Calendar has {len(calendar.events)} events:")
+                for event_id, event in calendar.events.items():
+                    log_to_file(f"  Event {event_id}: {event.title} on {event.date} - {event.participants!r}")
+
         try:
             log_to_file("Calling super().run_code()...")
             result = super().run_code(code, env, namespace, dependencies)
@@ -282,7 +255,18 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
                 output, _, exception, _, _ = result
                 log_to_file(f"Output: {output}")
                 if exception:
-                    log_to_file(f"Exception during execution: {exception}")
+                    # Truncate the exception to make it readable
+                    exception_str = str(exception)
+                    if len(exception_str) > 500:
+                        exception_str = exception_str[:500] + "... (truncated)"
+                    log_to_file(f"Exception during execution: {exception_str}")
+
+                    # Log more details about the exception
+                    log_to_file(f"Exception type: {type(exception.exception).__name__}")
+                    log_to_file(f"Exception message: {exception.exception!s}")
+                    if hasattr(exception, "nodes") and exception.nodes:
+                        node_str = str(exception.nodes[-1]) if exception.nodes else "Unknown"
+                        log_to_file(f"Error occurred in node: {node_str}")
                 else:
                     log_to_file("Code executed successfully")
 
@@ -303,8 +287,8 @@ def run_test():
 
     log_to_file("=== Starting Test Execution ===")
 
-    # Load our custom environment
-    env = load_test_environment()
+    # Load our custom environment using AgentDojo standard method
+    env = task_suite.load_and_inject_default_environment({})
     log_to_file(f"Loaded environment with {len(env.calendar.events)} calendar events")
     log_to_file(f"Calendar events: {list(env.calendar.events.keys())}")
 
@@ -314,11 +298,10 @@ def run_test():
     log_to_file(f"Tools: {[tool.name for tool in task_suite.tools]}")
 
     # Add AI assistant query function (same as original)
-    model = "claude-3-5-sonnet-latest"
+    model = "claude-3-7-sonnet-20250219"
     _T = TypeVar("_T", bound=str | int | float | BaseModel)
 
     def query_ai_assistant(query: str, output_schema: type[_T]) -> _T:
-        logger.info(f"AI Assistant query: {query[:100]}...")
         return quarantined_llm.query_quarantined_llm(
             llm=(model),
             query=query,
@@ -332,12 +315,11 @@ def run_test():
     # Create namespace
     namespace = Namespace.with_builtins()
     namespace = namespace.add_variables(make_agentdojo_namespace(namespace, runtime, env))
-    logger.info("Created namespace and added AgentDojo variables")
 
     # Create LLM and pipeline with logging
     llm = agent_pipeline.AnthropicLLM(
         AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY")),
-        "claude-3-5-sonnet-latest",
+        "claude-3-7-sonnet-20250219",
     )
     p_llm = LoggingPrivilegedLLM(llm, ADNoSecurityPolicyEngine, model)
 
@@ -352,23 +334,20 @@ def run_test():
     pipeline.name = "camel-test-custom-suite"
     specific_task_ids = ["user_task_0"]  # Start with just one task
 
-    logger.info(f"Running tasks: {specific_task_ids}")
-    logger.info(f"Available tasks in suite: {list(task_suite.user_tasks.keys())}")
-    print(f"Running tasks: {specific_task_ids}")
-    print(f"Available tasks in suite: {list(task_suite.user_tasks.keys())}")
+    print(f"Running task: {specific_task_ids[0]}")
 
     # Create logs directory
     logdir = Path("./logs")
     logdir.mkdir(exist_ok=True)
 
     # Run benchmark with timeout
-    logger.info("Starting benchmark execution...")
+    print("Starting benchmark...")
     try:
         with logging.OutputLogger(str(logdir)):
             # Run with a shorter timeout to avoid hanging
             import signal
 
-            def timeout_handler(signum, frame):
+            def timeout_handler(_signum, _frame):
                 raise TimeoutError("Benchmark execution timed out after 60 seconds")
 
             signal.signal(signal.SIGALRM, timeout_handler)
@@ -384,22 +363,19 @@ def run_test():
                     benchmark_version="test_custom",
                 )
                 signal.alarm(0)  # Cancel timeout
-                logger.info("Benchmark completed successfully")
-            except TimeoutError as e:
-                logger.error(f"Benchmark timed out: {e}")
-                print("Benchmark execution timed out - check debug_execution.json for details")
+                print("Benchmark completed successfully")
+            except TimeoutError:
+                print("Benchmark timed out after 60 seconds")
                 return None
 
     except Exception as e:
-        logger.error(f"Benchmark failed with exception: {e}")
         print(f"Benchmark failed: {e}")
         return None
 
     # Print results
     if results:
         utility_results = results["utility_results"]
-        logger.info(f"Results: {utility_results}")
-        print(f"\nResults for tasks {specific_task_ids}:")
+        print("\nResults:")
         for task_result, score in utility_results.items():
             print(f"  {task_result}: {score}")
 
