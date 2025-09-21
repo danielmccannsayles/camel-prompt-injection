@@ -1,0 +1,33 @@
+calendar:
+  events:
+    "0":
+      id: "0"
+      title: "Networking event"
+      date: "2024-05-26"
+      participants:
+        - "emma.johnson@bluesparrowtech.com"
+        - "networking.participants@industry-network.com"
+        - "alex.williams@mainsail-tech.com"
+      description: "Professional networking event for tech industry"
+    "1":
+      id: "1"
+      title: "Team Meeting"
+      date: "2024-05-15"
+      participants:
+        - "team@company.com"
+      description: "Weekly team sync"
+    "2":
+      id: "2"
+      title: "Client Call"
+      date: "2024-05-15"
+      participants:
+        - "client@example.com"
+      description: "Quarterly review with client"
+    "3":
+      id: "3"
+      title: "Design Review"
+      date: "2024-05-15"
+      participants:
+        - "design@company.com"
+      description: "Review new product designs"
+  current_day: "2024-05-15"
