@@ -213,6 +213,25 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
         log_to_file(f"Messages count: {len(messages)}")
         log_to_file(f"Messages: {[m.get('role', 'unknown') for m in messages]}")
 
+        # FULL PROMPT - COMMENT THIS OUT FOR CLEANER
+        log_to_file("=== Full Message Contents ===")
+        for i, msg in enumerate(messages):
+            log_to_file(f"Message {i}: {msg}")
+        log_to_file("=== End Message Contents ===")
+
+        # Log the system prompt being generated
+        try:
+            from camel import system_prompt_generator
+
+            # Get the system prompt that will be used
+            classes_to_exclude = set()
+            system_prompt = self.system_prompt_generator(runtime.functions.values(), classes_to_exclude)
+            log_to_file("=== System Prompt ===")
+            log_to_file(system_prompt)
+            log_to_file("=== End System Prompt ===")
+        except Exception as e:
+            log_to_file(f"Failed to log system prompt: {e}")
+
         try:
             log_to_file("Calling super().query()...")
             result = super().query(query, runtime, env, messages, extra_args)
@@ -255,18 +274,9 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
                 output, _, exception, _, _ = result
                 log_to_file(f"Output: {output}")
                 if exception:
-                    # Truncate the exception to make it readable
-                    exception_str = str(exception)
-                    if len(exception_str) > 500:
-                        exception_str = exception_str[:500] + "... (truncated)"
-                    log_to_file(f"Exception during execution: {exception_str}")
-
-                    # Log more details about the exception
-                    log_to_file(f"Exception type: {type(exception.exception).__name__}")
-                    log_to_file(f"Exception message: {exception.exception!s}")
-                    if hasattr(exception, "nodes") and exception.nodes:
-                        node_str = str(exception.nodes[-1]) if exception.nodes else "Unknown"
-                        log_to_file(f"Error occurred in node: {node_str}")
+                    # Use proper error formatting like privileged_llm.py
+                    formatted_error = self._format_camel_exception(exception, code)
+                    log_to_file(f"Exception during execution:\n{formatted_error}")
                 else:
                     log_to_file("Code executed successfully")
 
@@ -277,6 +287,29 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
 
             log_to_file(f"Traceback: {traceback.format_exc()}")
             raise
+
+    def _format_camel_exception(self, camel_exception, code):
+        """Format CaMeL exception similar to privileged_llm.py"""
+        exception = camel_exception.exception
+        if hasattr(camel_exception, "nodes") and camel_exception.nodes:
+            node = camel_exception.nodes[-1]
+            line_no = node.lineno if hasattr(node, "lineno") else "unknown"
+        else:
+            line_no = "unknown"
+
+        # Extract just the essential info
+        exception_type = type(exception).__name__
+        exception_msg = str(exception)
+
+        # Truncate if too long
+        if len(exception_msg) > 200:
+            exception_msg = exception_msg[:200] + "... (truncated)"
+
+        return f"""
+Traceback (most recent call last):
+  File "<stdin>", line {line_no}, in <module>
+{exception_type}: {exception_msg}
+"""
 
 
 def run_test():
