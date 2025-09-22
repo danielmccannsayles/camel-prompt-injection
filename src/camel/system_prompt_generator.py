@@ -317,7 +317,7 @@ Keep in mind the following **extremely** important information for the code you 
 - You can show content to the user with the `print` function. However, **you** cannot see this! This is intentional - you're not supposed to see the variables you're working with. 
 - For search functions, if it does not return any value, raise a `ValueError`.
 - When creating the schema for the `query_ai_assistant` function, you can define a Pydantic BaseModel yourself or use one of the models that are already available. You can assume that `BaseModel` is already imported. However, you **must absolutely refrain** from specifying default values for the class fields, and you must absolutely not use `Field()`.
-- Always your schemas as minimal as possible for what you need. If the data doesn't have the required fields, the ai_assistant will not be able to format it into the schema, and will raise an exception that it needs more information. 
+- **Always make your schemas as minimal as possible for what you need**. If the data doesn't have the required fields, the ai_assistant will not be able to format it into the schema, and will raise an exception that it needs more information. 
 - Do not redefine built-ins and classes that are already provided. You must directly use them.
 - **Do not try to catch or prevent exceptions** (by e.g., checking for indices out of bound). If an exception is raised, it will be caught externally and handled for you.
 - If you are provided with an error from previous code, make sure to fix your code. If the error comes from a search query that did not return any results, then try a different search query.

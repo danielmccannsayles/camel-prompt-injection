@@ -56,8 +56,7 @@ def query_quarantined_llm(
     direct access to the variables, so you need to insert **all the relevant information in the prompt**. When in doubt, do not hesitate to just provide full tool outputs, as long
     as they are provided with instructions on what to do. It is highly preferable to provide more information than necessary, rather than less information.
     :param output_schema: a Pydantic BaseModel class that specifies the expected output format from the model.
-      The fields should have types as specific as possible to make sure the parsing is correct and accurate.
-      Err on the side of simpler schemas - if the model doesn't have the information to fill out all the fields it will throw an exception.
+      Err on the side of simpler schemas! Only define what you need - if the model doesn't have the information to fill out all the fields it will throw an exception.
       allowed types are:
       - `int`
       - `str`
