@@ -27,7 +27,7 @@ import pydantic.fields
 
 from camel.capabilities import Capabilities
 from camel.interpreter import value
-from camel.quarantined_llm import NotEnoughInformationError, UnavailableFieldsError
+from camel.quarantined_llm import NotEnoughInformationError
 
 
 # This can't be typed in a more narrow way bc of limitations of the Python type system.
@@ -177,14 +177,6 @@ BUILT_IN_CLASSES: dict[str, value.CaMeLClass] = {
     "NotEnoughInformationError": value.CaMeLClass(
         "NotEnoughInformationError",
         NotEnoughInformationError,
-        Capabilities.camel(),
-        (),
-        {},
-        is_builtin=True,
-    ),
-    "UnavailableFieldsError": value.CaMeLClass(
-        "UnavailableFieldsError",
-        UnavailableFieldsError,
         Capabilities.camel(),
         (),
         {},

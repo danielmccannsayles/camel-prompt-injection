@@ -49,8 +49,7 @@ def query_quarantined_llm(
     with the build-in API of the assistant.
 
     If not provided with enough information, the model will raise a `NotEnoughInformationError`. This means that you might
-    need to provide the assistant with more information such as email addresses, dates, identifiers, names, etc. **DO NOT HESITATE TO PASS THE ENTIRE
-    OBJECTS RETURN FROM THE TOOL FUNCTIONS IF THE MODEL DOES NOT HAVE ENOUGH INFORMATION**.
+    need to provide the assistant with more information such as email addresses, dates, identifiers, names, etc. This also might mean that the model cannot format the information into the passed schema - maybe your schema is too complex.
 
     :param query: a string with the query. Make sure to provide sufficient instructions to the AI assistant so that it can understand what it needs to do.
     Avoid just passing it tool outputs without additional instructions. Provide as much details as possible. Keep in mind that the assitant does not have
@@ -58,6 +57,7 @@ def query_quarantined_llm(
     as they are provided with instructions on what to do. It is highly preferable to provide more information than necessary, rather than less information.
     :param output_schema: a Pydantic BaseModel class that specifies the expected output format from the model.
       The fields should have types as specific as possible to make sure the parsing is correct and accurate.
+      Err on the side of simpler schemas - if the model doesn't have the information to fill out all the fields it will throw an exception.
       allowed types are:
       - `int`
       - `str`
