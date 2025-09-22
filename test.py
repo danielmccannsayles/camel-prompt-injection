@@ -34,12 +34,14 @@ def log_to_file(message):
         f.flush()
 
 
+import enum
+
 from agentdojo import agent_pipeline, benchmark, functions_runtime, logging
 from agentdojo.base_tasks import BaseUserTask, TaskDifficulty
 from agentdojo.functions_runtime import Depends, FunctionCall, TaskEnvironment, make_function
 from agentdojo.task_suite.task_suite import TaskSuite
 from anthropic import AsyncAnthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 # Fix some weird pydantic model defs.
 try:
@@ -51,23 +53,29 @@ except Exception:
     pass
 
 from camel import quarantined_llm
-from camel.interpreter.namespace import Namespace
 from camel.pipeline_elements import privileged_llm
-from camel.pipeline_elements.agentdojo_function import (
-    make_agentdojo_namespace,
-)
 from camel.pipeline_elements.security_policies import (
     ADNoSecurityPolicyEngine,
 )
 
 
 # Custom Environment Definition
+class EventStatus(enum.Enum):
+    confirmed = "confirmed"
+    tentative = "tentative"
+    cancelled = "cancelled"
+
+
 class CalendarEvent(BaseModel):
-    id: str
-    title: str
-    date: str
-    participants: list[str]
-    description: str = ""
+    id_: str = Field(description="The unique identifier of the event")
+    title: str = Field(description="The title of the event")
+    description: str = Field(description="The description of the event")
+    start_time: datetime = Field(description="The start time of the event")
+    end_time: datetime = Field(description="The end time of the event")
+    location: str | None = Field(description="The location of the event")
+    participants: list[EmailStr] = Field(description="The list of the emails of the participants")
+    all_day: bool = Field(default=False, description="Whether the event is all day")
+    status: EventStatus = Field(default=EventStatus.confirmed, description="The status of the event")
 
 
 class SimpleCalendar(BaseModel):
@@ -87,7 +95,7 @@ def search_calendar_events(
     calendar: Annotated[SimpleCalendar, Depends("calendar")],
     query: str,
     date: str | None = None,
-) -> str:
+) -> list[CalendarEvent]:
     """Search for calendar events matching the query and optionally on a specific date.
 
     :param query: The search query to match against event titles.
@@ -97,16 +105,13 @@ def search_calendar_events(
 
     for event in calendar.events.values():
         if query.lower() in event.title.lower():
-            if date is None or event.date == date:
-                participants_str = ", ".join(event.participants)
-                matching_events.append(
-                    f"Event: {event.title}\nDate: {event.date}\nParticipants: {participants_str}\nDescription: {event.description}"
-                )
+            if date is None or event.start_time.strftime("%Y-%m-%d") == date:
+                matching_events.append(event)
 
-    return "\n\n".join(matching_events) if matching_events else "No matching events found."
+    return matching_events
 
 
-def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calendar")], day: str) -> str:
+def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calendar")], day: str) -> list[CalendarEvent]:
     """Get all calendar events for a specific day.
 
     :param day: The date to get events for in YYYY-MM-DD format (e.g., "2024-05-15").
@@ -114,10 +119,10 @@ def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calenda
     events_on_day = []
 
     for event in calendar.events.values():
-        if event.date == day:
-            events_on_day.append(f"- {event.title}: {event.description}")
+        if event.start_time.strftime("%Y-%m-%d") == day:
+            events_on_day.append(event)
 
-    return f"Events on {day}:\n" + "\n".join(events_on_day) if events_on_day else f"No events on {day}."
+    return events_on_day
 
 
 # Custom Task Suite
@@ -207,7 +212,7 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
         self.execution_log = []
 
     def query(self, query, runtime, env=None, messages=[], extra_args={}):
-        """Override query to log code generation and execution"""
+        """Override query to add logging"""
         log_to_file("=== PrivilegedLLM Query Started ===")
         log_to_file(f"Query: {query}")
         log_to_file(f"Messages count: {len(messages)}")
@@ -219,21 +224,9 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
             log_to_file(f"Message {i}: {msg}")
         log_to_file("=== End Message Contents ===")
 
-        # Log the system prompt being generated
-        try:
-            from camel import system_prompt_generator
-
-            # Get the system prompt that will be used
-            classes_to_exclude = set()
-            system_prompt = self.system_prompt_generator(runtime.functions.values(), classes_to_exclude)
-            log_to_file("=== System Prompt ===")
-            log_to_file(system_prompt)
-            log_to_file("=== End System Prompt ===")
-        except Exception as e:
-            log_to_file(f"Failed to log system prompt: {e}")
-
         try:
             log_to_file("Calling super().query()...")
+            log_to_file(f"include_environment_context: {self.include_environment_context}")
             result = super().query(query, runtime, env, messages, extra_args)
             log_to_file("=== PrivilegedLLM Query Completed Successfully ===")
             log_to_file(f"Result type: {type(result)}")
@@ -262,7 +255,9 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
             if hasattr(calendar, "events"):
                 log_to_file(f"Calendar has {len(calendar.events)} events:")
                 for event_id, event in calendar.events.items():
-                    log_to_file(f"  Event {event_id}: {event.title} on {event.date} - {event.participants!r}")
+                    log_to_file(
+                        f"  Event {event_id}: {event.title} on {event.start_time.strftime('%Y-%m-%d')} - {event.participants!r}"
+                    )
 
         try:
             log_to_file("Calling super().run_code()...")
@@ -324,16 +319,14 @@ def run_test():
     query_ai_assistant.__doc__ = quarantined_llm.query_quarantined_llm.__doc__
     runtime.register_function(query_ai_assistant)
 
-    # Create namespace
-    namespace = Namespace.with_builtins()
-    namespace = namespace.add_variables(make_agentdojo_namespace(namespace, runtime, env))
-
     # Create LLM and pipeline with logging
     llm = agent_pipeline.AnthropicLLM(
         AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY")),
         "claude-3-7-sonnet-20250219",
     )
-    p_llm = LoggingPrivilegedLLM(llm, ADNoSecurityPolicyEngine, model)
+    p_llm = LoggingPrivilegedLLM(
+        llm, ADNoSecurityPolicyEngine, model, include_environment_context=True, exclude_datetime=False
+    )
 
     pipeline = agent_pipeline.AgentPipeline(
         [

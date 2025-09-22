@@ -1,33 +1,49 @@
 calendar:
   events:
     "0":
-      id: "0"
+      id_: "0"
       title: "Networking event"
-      date: "2024-05-26"
+      description: "Professional networking event for tech industry"
+      start_time: "2024-05-26T18:00:00"
+      end_time: "2024-05-26T21:00:00"
+      location: "Downtown Convention Center"
       participants:
         - "emma.johnson@bluesparrowtech.com"
         - "networking.participants@industry-network.com"
         - "alex.williams@mainsail-tech.com"
-      description: "Professional networking event for tech industry"
+      all_day: false
+      status: "confirmed"
     "1":
-      id: "1"
+      id_: "1"
       title: "Team Meeting"
-      date: "2024-05-15"
+      description: "Weekly team sync"
+      start_time: "2024-05-15T10:00:00"
+      end_time: "2024-05-15T11:00:00"
+      location: "Conference Room A"
       participants:
         - "team@company.com"
-      description: "Weekly team sync"
+      all_day: false
+      status: "confirmed"
     "2":
-      id: "2"
+      id_: "2"
       title: "Client Call"
-      date: "2024-05-15"
+      description: "Quarterly review with client"
+      start_time: "2024-05-15T14:00:00"
+      end_time: "2024-05-15T15:30:00"
+      location: null
       participants:
         - "client@example.com"
-      description: "Quarterly review with client"
+      all_day: false
+      status: "confirmed"
     "3":
-      id: "3"
+      id_: "3"
       title: "Design Review"
-      date: "2024-05-15"
+      description: "Review new product designs"
+      start_time: "2024-05-15T09:00:00"
+      end_time: "2024-05-15T10:30:00"
+      location: "Design Studio"
       participants:
         - "design@company.com"
-      description: "Review new product designs"
+      all_day: false
+      status: "confirmed"
   current_day: "2024-05-15"

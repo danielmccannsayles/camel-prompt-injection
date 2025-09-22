@@ -111,6 +111,97 @@ File "<stdin>", line {camel_exception.nodes[-1].lineno}, in <module>
 """
 
 
+def _extract_environment_immutables(namespace: ns.Namespace) -> str:
+    """Extract information about immutable environment elements like defined classes."""
+    immutables = []
+
+    # Extract classes (both built-in and user-defined)
+    classes = []
+    functions = []
+    other_vars = []
+
+    for name, camel_value in namespace.variables.items():
+        # Check if it's a class by examining the CaMeLValue
+        if hasattr(camel_value, "value") and camel_value.value is not None:
+            val = camel_value.value
+            if isinstance(val, type):
+                classes.append(name)
+            elif callable(val):
+                functions.append(name)
+            else:
+                other_vars.append(name)
+
+    if classes:
+        # Filter out basic built-in classes for readability
+        user_classes = [
+            c
+            for c in classes
+            if c not in ["NoneType", "bool", "int", "float", "str", "list", "tuple", "dict", "set", "type"]
+        ]
+        if user_classes:
+            immutables.append(f"**Defined Classes:** {', '.join(sorted(user_classes))}")
+
+    if functions:
+        # Filter out built-in functions for readability
+        user_functions = [
+            f
+            for f in functions
+            if not f.startswith("__")
+            and f
+            not in [
+                "abs",
+                "any",
+                "all",
+                "bool",
+                "dir",
+                "divmod",
+                "enumerate",
+                "float",
+                "hash",
+                "int",
+                "len",
+                "list",
+                "max",
+                "min",
+                "print",
+                "range",
+                "repr",
+                "reversed",
+                "set",
+                "sorted",
+                "str",
+                "tuple",
+                "type",
+                "zip",
+                "sum",
+                "ValueError",
+                "NotEnoughInformationError",
+            ]
+        ]
+        if user_functions:
+            immutables.append(f"**Available Functions:** {', '.join(sorted(user_functions))}")
+
+    if other_vars:
+        # Only show relevant user-defined variables
+        user_vars = [
+            v
+            for v in other_vars
+            if not v.startswith("__")
+            and v not in ["Enum", "BaseModel", "FieldInfo", "EmailStr"]
+            and not callable(getattr(namespace.variables[v], "value", None))
+        ]
+        if user_vars:
+            immutables.append(f"**Defined Variables:** {', '.join(sorted(user_vars))}")
+
+    if immutables:
+        return (
+            "\n\n**Current Environment Context**\n\n"
+            + "\n".join(immutables)
+            + "\n\nThese elements are already available for use. Do not redefine them."
+        )
+    return ""
+
+
 def make_error_messages(code: str, interpretation_error: interpreter.CaMeLException) -> list[ad_types.ChatMessage]:
     return [
         ad_types.ChatAssistantMessage(
@@ -220,6 +311,8 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         eval_mode: interpreter.MetadataEvalMode = interpreter.MetadataEvalMode.NORMAL,
         quarantined_llm_retries: int = 10,
         max_attempts: int = 10,
+        include_environment_context: bool = False,
+        exclude_datetime: bool = True,
     ) -> None:
         """Initializes the PrivilegedLLM."""
         self.llm = llm
@@ -229,6 +322,8 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         self.quarantined_llm_retries = quarantined_llm_retries
         self.dummy_runtime = functions_runtime.FunctionsRuntime()
         self.max_attempts = max_attempts
+        self.include_environment_context = include_environment_context
+        self.exclude_datetime = exclude_datetime
         # Gemini thinking and o1-* do not support JSON mode, so we fall back to base base Gemini/4o
         self.quarantined_llm_model: KnownModelName = _get_quarantined_llm(quarantined_llm_model)
 
@@ -428,7 +523,7 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         runtime.register_function(query_ai_assistant)
 
         builtins_namespace = ns.Namespace.with_builtins()
-        # Models get confused in the other suites and should not use datetime stuff
+        # Models get confused in non workspace/travel suites.
         classes_to_exclude = (
             {
                 "datetime",
@@ -438,20 +533,27 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
                 "NaiveDatetime",
                 "timezone",
             }
-            if not isinstance(env, WorkspaceEnvironment | TravelEnvironment)
+            if self.exclude_datetime
             else set()
         )
 
         system_prompt = self.system_prompt_generator(runtime.functions.values(), classes_to_exclude)
 
-        if isinstance(env, BankingEnvironment):
-            system_prompt += "\n\nNote that, in the transaction history, the transactions from the user have 'me' as sender, and still habe positive amounts."
+        # if isinstance(env, BankingEnvironment):
+        #     system_prompt += "\n\nNote that, in the transaction history, the transactions from the user have 'me' as sender, and still habe positive amounts."
 
         if not isinstance(env, WorkspaceEnvironment):
             new_variables = {k: v for k, v in builtins_namespace.variables.items() if k not in classes_to_exclude}
             builtins_namespace = dataclasses.replace(builtins_namespace, variables=new_variables)
 
-        namespace = builtins_namespace.add_variables(make_agentdojo_namespace(builtins_namespace, runtime, env))
+        agentdojo_vars = make_agentdojo_namespace(builtins_namespace, runtime, env)
+        namespace = builtins_namespace.add_variables(agentdojo_vars)
+
+        # Add environment context if enabled
+        if self.include_environment_context:
+            environment_context = _extract_environment_immutables(namespace)
+            if environment_context:
+                system_prompt += environment_context
 
         model_output = ""
         dependencies = ()

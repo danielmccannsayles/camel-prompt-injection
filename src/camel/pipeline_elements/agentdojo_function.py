@@ -297,5 +297,8 @@ def make_agentdojo_namespace(
 
     for fn in runtime.functions.values():
         _get_types_recursive(fn.return_type)
+        # Also extract types from parameter annotations
+        for param_field in fn.parameters.model_fields.values():
+            _get_types_recursive(param_field.annotation)
 
     return ad_functions | return_types

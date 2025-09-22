@@ -1392,6 +1392,12 @@ def value_from_raw(
         case _ if (value_class := namespace.get(type(raw_value).__name__)) is not None and isinstance(
             value_class, CaMeLClass
         ):
+            # Special handling for Pydantic BaseModel objects to avoid infinite recursion
+            # Check if this is a Pydantic model by looking for model_fields attribute
+            if hasattr(raw_value, 'model_fields') and hasattr(raw_value, '__pydantic_core_schema__'):
+                # This is a Pydantic model, wrap it directly to avoid circular reference issues
+                return CaMeLValueAsWrapper(raw_value, metadata, namespace, dependencies)
+
             raw_value_copy = copy.copy(raw_value)
             for attr in value_class.attr_names():
                 if attr in value_class._methods:
