@@ -1,6 +1,6 @@
 ## Exploring Camel paper
 
-Added daniel/ folder. Made some changes:
+Added daniel/ folder. Made some changes to the flow:
 
 1. Added code to show the current namespace variables for the LM (on an error, so it doesn't try & redefine)
 2. Prompt tweaks:
