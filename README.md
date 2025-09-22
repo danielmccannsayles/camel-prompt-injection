@@ -1,3 +1,17 @@
+## Exploring Camel paper
+
+Added daniel/ folder. Made some changes:
+
+1. Added code to show the current namespace variables for the LM (on an error, so it doesn't try & redefine)
+2. Prompt tweaks:
+   1. Explained NotEnoughInfo differently - before the solution was phrased as "supply more info". Added that the problem might be the schema being too complex
+   2. Tell LM it can't see printed text & to use query_ai_assistant more
+   3. Reframe as code template, not writing code, to avoid triggering best practices
+   4. Lots of reminders to simplify schemas
+3. Added lots of logging to privileged_llm.
+
+# OLD:
+
 # `CaMeL`: [Defeating Prompt Injections by Design](https://arxiv.org/abs/2503.18813)
 
 Edoardo Debenedetti<sup>1,3</sup>, Ilia Shumailov<sup>2</sup>, Tianqi Fan<sup>1</sup>, Jamie Hayes<sup>2</sup>, Nicholas Carlini<sup>2</sup>, Daniel Fabian<sup>1</sup>, Christoph Kern<sup>1</sup>, Chongyang Shi<sup>2</sup>, Florian Tramèr<sup>3</sup>

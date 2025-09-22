@@ -199,6 +199,7 @@ Temporary Items
 .zed
 
 logs
+ad_logs
 plots
 tables
 count_tokens_qllm.py
