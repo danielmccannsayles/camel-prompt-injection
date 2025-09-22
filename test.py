@@ -95,7 +95,7 @@ def search_calendar_events(
     calendar: Annotated[SimpleCalendar, Depends("calendar")],
     query: str,
     date: str | None = None,
-) -> list[CalendarEvent]:
+) -> str:
     """Search for calendar events matching the query and optionally on a specific date.
 
     :param query: The search query to match against event titles.
@@ -106,12 +106,12 @@ def search_calendar_events(
     for event in calendar.events.values():
         if query.lower() in event.title.lower():
             if date is None or event.start_time.strftime("%Y-%m-%d") == date:
-                matching_events.append(event)
+                matching_events.append(str(event))
 
-    return matching_events
+    return "\n".join(matching_events)
 
 
-def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calendar")], day: str) -> list[CalendarEvent]:
+def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calendar")], day: str) -> str:
     """Get all calendar events for a specific day.
 
     :param day: The date to get events for in YYYY-MM-DD format (e.g., "2024-05-15").
@@ -120,9 +120,9 @@ def get_day_calendar_events(calendar: Annotated[SimpleCalendar, Depends("calenda
 
     for event in calendar.events.values():
         if event.start_time.strftime("%Y-%m-%d") == day:
-            events_on_day.append(event)
+            events_on_day.append(str(event))
 
-    return events_on_day
+    return "\n".join(events_on_day)
 
 
 # Custom Task Suite
@@ -269,11 +269,7 @@ class LoggingPrivilegedLLM(privileged_llm.PrivilegedLLM):
                 output, _, exception, _, _ = result
                 log_to_file(f"Output: {output}")
                 if exception:
-                    # Use the existing format_camel_exception function
-                    from camel.pipeline_elements.privileged_llm import format_camel_exception
-
-                    formatted_error = format_camel_exception(exception, code)
-                    log_to_file(f"Exception during execution:\n{formatted_error}")
+                    log_to_file("Code execution had an error (full error message logged in privileged_llm)")
                 else:
                     log_to_file("Code executed successfully")
 
@@ -325,7 +321,12 @@ def run_test():
         "claude-3-7-sonnet-20250219",
     )
     p_llm = LoggingPrivilegedLLM(
-        llm, ADNoSecurityPolicyEngine, model, include_environment_context=True, exclude_datetime=False
+        llm,
+        ADNoSecurityPolicyEngine,
+        model,
+        include_environment_context=True,
+        exclude_datetime=False,
+        log_function=log_to_file,
     )
 
     pipeline = agent_pipeline.AgentPipeline(

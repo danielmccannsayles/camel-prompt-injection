@@ -111,8 +111,13 @@ File "<stdin>", line {camel_exception.nodes[-1].lineno}, in <module>
 """
 
 
-def _extract_environment_immutables(namespace: ns.Namespace) -> str:
-    """Extract information about immutable environment elements like defined classes."""
+def _extract_environment_immutables(namespace: ns.Namespace, baseline_vars: set[str] | None = None) -> str:
+    """Extract information about immutable environment elements like defined classes.
+
+    Args:
+        namespace: The current namespace
+        baseline_vars: Set of variable names that were present before execution started.If provided, only shows variables NOT in this baseline set.
+    """
     immutables = []
 
     # Extract classes (both built-in and user-defined)
@@ -120,10 +125,17 @@ def _extract_environment_immutables(namespace: ns.Namespace) -> str:
     functions = []
     other_vars = []
 
-    for name, camel_value in namespace.variables.items():
+    # Filter to only show variables that were added after baseline
+    variables_to_check = (
+        {k: v for k, v in namespace.variables.items() if k not in baseline_vars}
+        if baseline_vars is not None
+        else namespace.variables
+    )
+
+    for name, camel_value in variables_to_check.items():
         # Check if it's a class by examining the CaMeLValue
-        if hasattr(camel_value, "value") and camel_value.value is not None:
-            val = camel_value.value
+        if hasattr(camel_value, "raw") and camel_value.raw is not None:
+            val = camel_value.raw
             if isinstance(val, type):
                 classes.append(name)
             elif callable(val):
@@ -132,66 +144,7 @@ def _extract_environment_immutables(namespace: ns.Namespace) -> str:
                 other_vars.append(name)
 
     if classes:
-        # Filter out basic built-in classes for readability
-        user_classes = [
-            c
-            for c in classes
-            if c not in ["NoneType", "bool", "int", "float", "str", "list", "tuple", "dict", "set", "type"]
-        ]
-        if user_classes:
-            immutables.append(f"**Defined Classes:** {', '.join(sorted(user_classes))}")
-
-    if functions:
-        # Filter out built-in functions for readability
-        user_functions = [
-            f
-            for f in functions
-            if not f.startswith("__")
-            and f
-            not in [
-                "abs",
-                "any",
-                "all",
-                "bool",
-                "dir",
-                "divmod",
-                "enumerate",
-                "float",
-                "hash",
-                "int",
-                "len",
-                "list",
-                "max",
-                "min",
-                "print",
-                "range",
-                "repr",
-                "reversed",
-                "set",
-                "sorted",
-                "str",
-                "tuple",
-                "type",
-                "zip",
-                "sum",
-                "ValueError",
-                "NotEnoughInformationError",
-            ]
-        ]
-        if user_functions:
-            immutables.append(f"**Available Functions:** {', '.join(sorted(user_functions))}")
-
-    if other_vars:
-        # Only show relevant user-defined variables
-        user_vars = [
-            v
-            for v in other_vars
-            if not v.startswith("__")
-            and v not in ["Enum", "BaseModel", "FieldInfo", "EmailStr"]
-            and not callable(getattr(namespace.variables[v], "value", None))
-        ]
-        if user_vars:
-            immutables.append(f"**Defined Variables:** {', '.join(sorted(user_vars))}")
+        immutables.append(f"**Defined Classes:** {', '.join(sorted(classes))}")
 
     if immutables:
         return (
@@ -202,7 +155,13 @@ def _extract_environment_immutables(namespace: ns.Namespace) -> str:
     return ""
 
 
-def make_error_messages(code: str, interpretation_error: interpreter.CaMeLException) -> list[ad_types.ChatMessage]:
+def make_error_messages(
+    code: str,
+    interpretation_error: interpreter.CaMeLException,
+    namespace: ns.Namespace | None = None,
+    include_environment_context: bool = False,
+    baseline_vars: set[str] | None = None,
+) -> list[ad_types.ChatMessage]:
     return [
         ad_types.ChatAssistantMessage(
             role="assistant",
@@ -221,8 +180,7 @@ return any results, then try the query with different parameters. The code \
 up to the line before the one where the exception was thrown has already been \
 executed and the variables and defined classes will \
 still be accessible to you. It's very important that you do not re-write code to run \
-functions that have side-effects (e.g., functions that send an email).
-""")
+functions that have side-effects (e.g., functions that send an email).{_extract_environment_immutables(namespace, baseline_vars) if include_environment_context and namespace else ""}""")
             ],
         ),
     ]
@@ -313,6 +271,7 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         max_attempts: int = 10,
         include_environment_context: bool = False,
         exclude_datetime: bool = True,
+        log_function: Callable[[str], None] | None = None,
     ) -> None:
         """Initializes the PrivilegedLLM."""
         self.llm = llm
@@ -324,6 +283,7 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         self.max_attempts = max_attempts
         self.include_environment_context = include_environment_context
         self.exclude_datetime = exclude_datetime
+        self.log_function = log_function
         # Gemini thinking and o1-* do not support JSON mode, so we fall back to base base Gemini/4o
         self.quarantined_llm_model: KnownModelName = _get_quarantined_llm(quarantined_llm_model)
 
@@ -389,6 +349,7 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         system_prompt: str,
         previous_printed_output: str,
         dependencies: Iterable[CaMeLValue],
+        baseline_vars: set[str] | None = None,
     ) -> tuple[
         str,
         Sequence[tuple[functions_runtime.FunctionCall, functions_runtime.FunctionReturnType]],
@@ -465,7 +426,20 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
             tool_calls.append(tool_call)
 
         if interpretation_error:
-            error_messages = make_error_messages(code, interpretation_error)
+            error_messages = make_error_messages(
+                code, interpretation_error, namespace, self.include_environment_context, baseline_vars
+            )
+
+            # Log the error message that gets sent to the LLM
+            if self.log_function:
+                # Extract the user message content from error_messages
+                for msg in error_messages:
+                    if msg.get("role") == "user" and msg.get("content"):
+                        error_content = ad_types.get_text_content_as_str(msg["content"])
+                        self.log_function(
+                            f"=== ERROR MESSAGE SENT TO LLM ===\n{error_content}\n=== END ERROR MESSAGE ==="
+                        )
+
             updated_messages = [*messages, *tool_call_messages, *error_messages]
             privileged_llm_messages = [*privileged_llm_messages, *error_messages]
         else:
@@ -539,6 +513,10 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
 
         system_prompt = self.system_prompt_generator(runtime.functions.values(), classes_to_exclude)
 
+        # Log the system prompt if log function is provided
+        if self.log_function:
+            self.log_function(f"=== SYSTEM PROMPT ===\n{system_prompt}\n=== END SYSTEM PROMPT ===")
+
         # if isinstance(env, BankingEnvironment):
         #     system_prompt += "\n\nNote that, in the transaction history, the transactions from the user have 'me' as sender, and still habe positive amounts."
 
@@ -549,14 +527,11 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         agentdojo_vars = make_agentdojo_namespace(builtins_namespace, runtime, env)
         namespace = builtins_namespace.add_variables(agentdojo_vars)
 
-        # Add environment context if enabled
-        if self.include_environment_context:
-            environment_context = _extract_environment_immutables(namespace)
-            if environment_context:
-                system_prompt += environment_context
-
         model_output = ""
         dependencies = ()
+
+        # Capture baseline namespace variables before execution loops
+        baseline_namespace_vars = set(namespace.variables.keys())
 
         for _ in range(self.max_attempts):
             (model_output, _, interpretation_error, messages, privileged_llm_messages, namespace, dependencies) = (
@@ -570,6 +545,7 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
                     system_prompt,
                     model_output,
                     dependencies,
+                    baseline_namespace_vars,
                 )
             )
 
