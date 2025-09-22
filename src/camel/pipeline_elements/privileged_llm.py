@@ -256,6 +256,8 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         security_policies: a list of security policy tuples, where the first element is the tool name and the second one is the security policy to apply.
         eval_mode: the evaluation mode for the interpreter.
         quarantined_llm_retries: the number of retries for the quarantined LLM.
+        include_environment_context: on retry, add the existing namespace classes
+        exclude_datetime: don't add the datetime tools
     """
 
     def __init__(
@@ -269,7 +271,7 @@ class PrivilegedLLM(agent_pipeline.BasePipelineElement):
         eval_mode: interpreter.MetadataEvalMode = interpreter.MetadataEvalMode.NORMAL,
         quarantined_llm_retries: int = 10,
         max_attempts: int = 10,
-        include_environment_context: bool = False,
+        include_environment_context: bool = True,
         exclude_datetime: bool = True,
         log_function: Callable[[str], None] | None = None,
     ) -> None:

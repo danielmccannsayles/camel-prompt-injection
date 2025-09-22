@@ -38,7 +38,6 @@ def main(
     suites: list[str] | None = None,
     eval_mode: MetadataEvalMode = MetadataEvalMode.NORMAL,
     q_llm: str | None = None,
-    user_tasks: list[str] | None = None,
 ):
     """Example usage of the defense.
 
@@ -62,7 +61,9 @@ def main(
 
     attack_name = "important_instructions"
 
-    suites = suites or ["workspace", "banking", "travel", "slack"]
+    user_tasks: list[str] | None = [f"user_task_{i}" for i in range(1, 6)]
+
+    suites = ["travel"]
     total_utility_results = []
     total_security_results = []
     logdir = Path("./logs")

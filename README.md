@@ -10,6 +10,10 @@ Added daniel/ folder. Made some changes:
    4. Lots of reminders to simplify schemas
 3. Added lots of logging to privileged_llm.
 
+Preliminary results (one run of the first 5 tasks of travel) seem to suggest that these tweaks are a little better than the original at handling underdocumented APIs. In the paper, #2 & #4 failed due to this. #2 worked correctly, and #4 failed but due to an unrelated misstep (qllm thought 4.2 > 4.7?).
+
+See the results in daniel/travel_log-sonnet-35
+
 # OLD:
 
 # `CaMeL`: [Defeating Prompt Injections by Design](https://arxiv.org/abs/2503.18813)
