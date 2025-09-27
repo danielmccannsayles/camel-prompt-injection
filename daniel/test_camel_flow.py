@@ -1,11 +1,8 @@
 import asyncio
-import json
 import logging
-import os
-import sys
-from typing import Any
 
 import anthropic
+from qlm import QLM
 from server import CamelClient, CamelServer
 
 logging.basicConfig(level=logging.INFO)
@@ -44,89 +41,8 @@ async def test_camel_flow():
                 logger.error(f"PLM error: {e}")
                 return f"Error in PLM: {e}"
 
-        def create_dynamic_tool(schema: dict):
-            """Generate tool definition from dynamic schema"""
-            return {
-                "name": "extract_data",
-                "description": "Extract structured data matching the provided schema",
-                "input_schema": schema,
-            }
-
-        def my_qlm(prompt: str, schema: dict) -> Any:
-            """QLM using Anthropic Sonnet with dynamically generated tools for schema enforcement."""
-            logger.info(f"QLM called with prompt: {prompt[:100]}... schema: {schema}")
-            try:
-                # Create dynamic tool from the provided schema
-                dynamic_tool = create_dynamic_tool(schema)
-                logger.info(f"Created dynamic tool: {dynamic_tool['name']} with schema: {json.dumps(schema, indent=2)}")
-
-                # Use tool calling to enforce structured output
-                response = anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1000,
-                    messages=[{"role": "user", "content": prompt}],
-                    tools=[dynamic_tool],  # type: ignore
-                    tool_choice={"type": "tool", "name": "extract_data"},
-                )
-
-                # Extract the tool use result
-                if response.content and len(response.content) > 0:
-                    for content_block in response.content:
-                        if hasattr(content_block, "type") and content_block.type == "tool_use":
-                            result = content_block.input
-                            logger.info(f"QLM structured result: {result}")
-                            return result
-
-                # Fallback if no tool use found
-                logger.warning("No structured output found, falling back to text parsing")
-                if response.content and len(response.content) > 0:
-                    first_content = response.content[0]
-                    if hasattr(first_content, "text"):
-                        text_content = first_content.text
-                        try:
-                            result = json.loads(text_content)
-                            return result
-                        except json.JSONDecodeError:
-                            return {"result": text_content, "schema_matched": False}
-                    else:
-                        return {"result": str(first_content), "schema_matched": False}
-
-                return {"error": "No response content", "schema_matched": False}
-
-            except Exception as e:
-                logger.error(f"QLM error: {e}")
-                # Fallback to regular message creation with schema prompt
-                try:
-                    schema_prompt = f"""Please respond with JSON that matches this schema: {json.dumps(schema)}
-
-{prompt}
-
-Respond only with valid JSON matching the schema."""
-
-                    response = anthropic_client.messages.create(
-                        model="claude-3-5-sonnet-20241022",
-                        max_tokens=1000,
-                        messages=[{"role": "user", "content": schema_prompt}],
-                    )
-
-                    if response.content and len(response.content) > 0:
-                        first_content = response.content[0]
-                        if hasattr(first_content, "text"):
-                            result_text = first_content.text.strip()
-                            try:
-                                result = json.loads(result_text)
-                                logger.info(f"QLM fallback JSON result: {result}")
-                                return result
-                            except json.JSONDecodeError:
-                                return {"result": result_text, "schema_matched": False}
-                        else:
-                            return {"result": str(first_content), "schema_matched": False}
-
-                    return {"error": "No fallback response content", "schema_matched": False}
-
-                except Exception as fallback_error:
-                    logger.error(f"QLM fallback error: {fallback_error}")
-                    return {"error": str(e), "fallback_error": str(fallback_error), "schema_matched": False}
+        # Create QLM using the simplified module
+        my_qlm = QLM(anthropic_client)
 
         # Create client with same port as server
         camel_client = CamelClient(my_plm, my_qlm, [], server_host="localhost", server_port=8766)
