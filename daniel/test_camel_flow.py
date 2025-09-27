@@ -2,9 +2,10 @@ import asyncio
 import logging
 
 import anthropic
-from qlm import QLM
 from server import CamelClient, CamelServer
-from server.base_models import BasePLM, BaseQLM, JsonSchema, Message, make_error_messages
+from server.base_models import JsonSchema, Message, make_error_messages
+
+from daniel.locallms import LocalPLM, LocalQLM
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,37 +29,10 @@ async def test_camel_flow():
         anthropic_client = anthropic.Anthropic()
 
         # Define PLM class
-        class MyPLM(BasePLM):
-            """PLM using Anthropic Sonnet to generate code."""
-
-            def __call__(self, messages: list[Message]) -> str:
-                logger.info(f"PLM called with {len(messages)} messages")
-                try:
-                    # Convert Message objects to Anthropic format
-                    anthropic_messages = []
-                    system_msg = None
-                    for msg in messages:
-                        if msg.role == "system":
-                            system_msg = msg.content
-                        else:
-                            anthropic_messages.append({"role": msg.role, "content": msg.content})
-
-                    response = anthropic_client.messages.create(
-                        system=system_msg or anthropic.NOT_GIVEN,
-                        model="claude-3-5-sonnet-20241022",
-                        max_tokens=1000,
-                        messages=anthropic_messages,
-                    )
-                    result = response.content[0].text
-                    logger.info(f"PLM response: {result[:100]}...")
-                    return result
-                except Exception as e:
-                    logger.error(f"PLM error: {e}")
-                    return f"Error in PLM: {e}"
 
         # Create instances
-        my_plm = MyPLM()
-        my_qlm = QLM(anthropic_client)
+        my_plm = LocalPLM(anthropic_client)
+        my_qlm = LocalQLM(anthropic_client)
 
         # Create client with same port as server
         camel_client = CamelClient(my_plm, my_qlm, [], server_host="localhost", server_port=8766)
