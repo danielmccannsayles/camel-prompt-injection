@@ -69,14 +69,3 @@ def deserialize_functions_runtime(
         logger.info(f"Function: {func_data['name']} - {func_data['description']}")
 
     return runtime, function_metadata
-
-
-def serialize_function(func: ad_runtime.Function) -> dict[str, Any]:
-    """Serialize a Function object for websocket transmission."""
-    return {
-        "name": func.name,
-        "description": func.description,
-        "parameters_schema": func.parameters.model_json_schema(),
-        "full_docstring": func.full_docstring,
-        "return_type": str(func.return_type) if func.return_type else None,
-    }

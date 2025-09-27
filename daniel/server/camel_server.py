@@ -7,7 +7,7 @@ from agentdojo import functions_runtime
 from pydantic import BaseModel
 
 from .base_models import JsonSchema, Message
-from .utils import deserialize_functions_runtime, serialize_function
+from .utils import deserialize_functions_runtime
 from .websocket_wrapper import WebSocketServer
 
 _T = TypeVar("_T", bound=str | int | float | BaseModel)
@@ -32,7 +32,6 @@ class CamelServer:
         self.websocket_server = WebSocketServer(host, port, handle_query=self.handle_query)
         self.client_runtimes: dict[str, functions_runtime.FunctionsRuntime] = {}
         self.client_function_metadata: dict[str, dict[str, dict[str, Any]]] = {}
-
 
     async def call_plm(self, client_id: str, messages: list[Message]) -> str:
         """Call the client's PLM function via websocket."""
@@ -63,11 +62,7 @@ class CamelServer:
 
     async def call_function(self, client_id: str, function_name: str, args: dict[str, Any]) -> Any:
         """Call a client function via websocket."""
-        message = {
-            "type": "function_call",
-            "function_name": function_name,
-            "args": args
-        }
+        message = {"type": "function_call", "function_name": function_name, "args": args}
         response = await self.websocket_server.send_to_client(client_id, message)
 
         if response["type"] != "function_response":

@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import uuid
-from typing import Any
 
 from agentdojo import functions_runtime as ad_runtime
 
@@ -39,7 +38,6 @@ class CamelClient:
         self.qlm = qlm
         self.functions_runtime = functions_runtime or ad_runtime.FunctionsRuntime()
         self.client_id = str(uuid.uuid4())
-
 
     @property
     def is_connected(self) -> bool:
@@ -133,7 +131,11 @@ class CamelClient:
             await self.connect()
 
         # Send query to server and get acknowledgment
-        query_message = {"type": "query", "query": query, "functions_runtime": serialize_functions_runtime(self.functions_runtime)}
+        query_message = {
+            "type": "query",
+            "query": query,
+            "functions_runtime": serialize_functions_runtime(self.functions_runtime),
+        }
         ack = await self.websocket_client.send_message(query_message)
         if ack.get("type") != "query_received":
             raise Exception(f"Unexpected server response: {ack}")
