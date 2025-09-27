@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from websockets.asyncio.client import connect
@@ -12,10 +13,16 @@ logger = logging.getLogger(__name__)
 class WebSocketServer:
     """Basic WebSocket server wrapper"""
 
-    def __init__(self, host: str = "localhost", port: int = 8765):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 8765,
+        handle_query: Callable[[str, dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
+    ):
         self.host = host
         self.port = port
         self.clients: dict[str, Any] = {}  # websocket connections
+        self.handle_query = handle_query
 
     async def register_client(self, websocket, client_id: str):
         """Register a new client connection."""
@@ -38,6 +45,14 @@ class WebSocketServer:
         response = await websocket.recv()
         return json.loads(response)
 
+    async def send_to_client_only(self, client_id: str, message: dict[str, Any]):
+        """Send message to client without waiting for response."""
+        if client_id not in self.clients:
+            raise ValueError(f"Client {client_id} not connected")
+
+        websocket = self.clients[client_id]
+        await websocket.send(json.dumps(message))
+
     async def handle_client(self, websocket):
         """Handle a client connection"""
         client_id = None
@@ -58,7 +73,12 @@ class WebSocketServer:
                             continue
 
                         # This is where the server logic will handle the query
-                        await self.handle_query(client_id, data)
+                        if self.handle_query:
+                            await self.handle_query(client_id, data)
+                        else:
+                            await websocket.send(
+                                json.dumps({"type": "error", "message": "No query handler configured"})
+                            )
 
                     else:
                         await websocket.send(
@@ -76,10 +96,6 @@ class WebSocketServer:
         finally:
             if client_id:
                 await self.unregister_client(client_id)
-
-    async def handle_query(self, client_id: str, data: dict[str, Any]):
-        """Override this method to handle queries."""
-        raise NotImplementedError("Subclasses must implement handle_query")
 
     async def start(self):
         """Start the WebSocket server using modern asyncio websockets."""
@@ -133,6 +149,12 @@ class WebSocketClient:
         await self.websocket.send(json.dumps(message))
         response = await self.websocket.recv()
         return json.loads(response)
+
+    async def respond(self, message: dict[str, Any]):
+        """Send message to server without waiting for response. Used for responding to server, e.g. qLM response"""
+        if not self.websocket:
+            raise ValueError("Not connected to server")
+        await self.websocket.send(json.dumps(message))
 
     async def listen_for_messages(self):
         """Listen for messages from server (for callbacks)."""
