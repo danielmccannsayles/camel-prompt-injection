@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import anthropic
+from agentdojo import functions_runtime
 from locallms import LocalPLM, LocalQLM
 from server import CamelClient, CamelServer
 from server.base_models import JsonSchema, Message, make_error_messages
@@ -33,8 +34,39 @@ async def test_camel_flow():
         my_plm = LocalPLM(anthropic_client)
         my_qlm = LocalQLM(anthropic_client)
 
+        # Create sample functions for testing
+        def add_numbers(a: int, b: int) -> int:
+            """Add two numbers together.
+
+            Args:
+                a: First number to add
+                b: Second number to add
+
+            Returns:
+                The sum of a and b
+            """
+            return a + b
+
+        def get_weather(city: str) -> str:
+            """Get the weather for a city.
+
+            Args:
+                city: Name of the city to get weather for
+
+            Returns:
+                Weather description string
+            """
+            return f"The weather in {city} is sunny and 72°F"
+
+        # Create functions runtime and register functions
+        runtime = functions_runtime.FunctionsRuntime()
+        runtime.register_function(add_numbers)
+        runtime.register_function(get_weather)
+
+        logger.info(f"Created runtime with {len(runtime.functions)} functions")
+
         # Create client with same port as server
-        camel_client = CamelClient(my_plm, my_qlm, [], server_host="localhost", server_port=8766)
+        camel_client = CamelClient(my_plm, my_qlm, runtime, server_host="localhost", server_port=8766)
 
         # Test PLM query
         logger.info("Sending test query to client...")

@@ -1,8 +1,12 @@
 import asyncio
 import logging
 import uuid
+from typing import Any
+
+from agentdojo import functions_runtime as ad_runtime
 
 from .base_models import BasePLM, BaseQLM, JsonSchema, Message
+from .utils import serialize_function_result, serialize_functions_runtime
 from .websocket_wrapper import WebSocketClient
 
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +20,7 @@ class CamelClient:
         self,
         plm: BasePLM,
         qlm: BaseQLM,
-        tools: list | None = None,
+        functions_runtime: ad_runtime.FunctionsRuntime | None = None,
         server_host: str = "localhost",
         server_port: int = 8765,
     ):
@@ -26,15 +30,16 @@ class CamelClient:
         Args:
             plm: Privileged LLM instance that takes message list and returns response
             qlm: Quarantined LLM instance that takes prompt and schema and returns structured data
-            tools: List of tools (TODO: define format)
+            functions_runtime: FunctionsRuntime containing available tools/functions
             server_host: CamelServer host
             server_port: CamelServer port
         """
         self.websocket_client = WebSocketClient(server_host, server_port)
         self.plm = plm
         self.qlm = qlm
-        self.tools = tools or []
+        self.functions_runtime = functions_runtime or ad_runtime.FunctionsRuntime()
         self.client_id = str(uuid.uuid4())
+
 
     @property
     def is_connected(self) -> bool:
@@ -57,7 +62,6 @@ class CamelClient:
         """Disconnect from the CamelServer."""
         await self.websocket_client.disconnect()
 
-    # TODO: handle tool calls!
     async def _handle_server_callbacks(self):
         """Handle callbacks from server for PLM/QLM calls."""
         async for data in self.websocket_client.listen_for_messages():
@@ -85,6 +89,27 @@ class CamelClient:
                     response = {"type": "qlm_response", "error": str(e)}
                 await self.websocket_client.respond(response)
 
+            elif message_type == "function_call":
+                # Server is requesting a function call
+                function_name = data["function_name"]
+                args = data["args"]
+                try:
+                    # Check if function exists
+                    if function_name not in self.functions_runtime.functions:
+                        raise ValueError(f"Function '{function_name}' not found in runtime")
+
+                    # Get the function and call it
+                    func = self.functions_runtime.functions[function_name]
+                    result = func(**args)
+
+                    # Handle serialization of arbitrary return types
+                    serialized_result = serialize_function_result(result)
+                    response = {"type": "function_response", "result": serialized_result}
+                except Exception as e:
+                    logger.error(f"Function call error for {function_name}: {e}")
+                    response = {"type": "function_response", "error": str(e)}
+                await self.websocket_client.respond(response)
+
             elif message_type == "query_response":
                 # This is the final response to our query - return it
                 return data["result"]
@@ -108,7 +133,7 @@ class CamelClient:
             await self.connect()
 
         # Send query to server and get acknowledgment
-        query_message = {"type": "query", "query": query, "tools": self.tools}
+        query_message = {"type": "query", "query": query, "functions_runtime": serialize_functions_runtime(self.functions_runtime)}
         ack = await self.websocket_client.send_message(query_message)
         if ack.get("type") != "query_received":
             raise Exception(f"Unexpected server response: {ack}")

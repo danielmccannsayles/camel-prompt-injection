@@ -3,9 +3,11 @@ import os
 import sys
 from typing import Any, TypeVar
 
+from agentdojo import functions_runtime
 from pydantic import BaseModel
 
 from .base_models import JsonSchema, Message
+from .utils import deserialize_functions_runtime, serialize_function
 from .websocket_wrapper import WebSocketServer
 
 _T = TypeVar("_T", bound=str | int | float | BaseModel)
@@ -28,6 +30,9 @@ class CamelServer:
 
     def __init__(self, host: str = "localhost", port: int = 8765):
         self.websocket_server = WebSocketServer(host, port, handle_query=self.handle_query)
+        self.client_runtimes: dict[str, functions_runtime.FunctionsRuntime] = {}
+        self.client_function_metadata: dict[str, dict[str, dict[str, Any]]] = {}
+
 
     async def call_plm(self, client_id: str, messages: list[Message]) -> str:
         """Call the client's PLM function via websocket."""
@@ -56,18 +61,44 @@ class CamelServer:
 
         return response["result"]
 
+    async def call_function(self, client_id: str, function_name: str, args: dict[str, Any]) -> Any:
+        """Call a client function via websocket."""
+        message = {
+            "type": "function_call",
+            "function_name": function_name,
+            "args": args
+        }
+        response = await self.websocket_server.send_to_client(client_id, message)
+
+        if response["type"] != "function_response":
+            raise ValueError(f"Expected function_response, got {response['type']}")
+
+        if "error" in response:
+            raise Exception(f"Function error: {response['error']}")
+
+        return response["result"]
+
     async def handle_query(self, client_id: str, data: dict[str, Any]):
         """Handle a query by implementing privileged LLM logic."""
         query = data["query"]
         logger.info(f"Handling query from client {client_id}: {query}")
+
+        # Store the client's function runtime if provided
+        if "functions_runtime" in data:
+            runtime_data = data["functions_runtime"]
+            runtime, function_metadata = deserialize_functions_runtime(runtime_data)
+            self.client_runtimes[client_id] = runtime
+            self.client_function_metadata[client_id] = function_metadata
+            logger.info(f"Registered {len(runtime.functions)} functions for client {client_id}")
 
         # Send immediate acknowledgment
         ack_message = {"type": "query_received"}
         await self.websocket_server.send_to_client_only(client_id, ack_message)
 
         try:
-            # Step 1: Create system prompt for code generation
-            system_prompt = default_system_prompt_generator()
+            # Step 1: Get the client's function runtime and create system prompt
+            runtime = self.client_runtimes.get(client_id, functions_runtime.FunctionsRuntime())
+            system_prompt = default_system_prompt_generator(runtime.functions.values())
 
             # Step 2: Create message list and call client's PLM to generate code
             messages = [Message(role="system", content=system_prompt), Message(role="user", content=query)]
@@ -75,13 +106,34 @@ class CamelServer:
 
             logger.info(f"Generated code: {code}")
 
-            # Step 3: Execute the code (simplified version for now)
-            # TODO: Implement proper code execution with tool calls and QLM callbacks
-            # For now, just return the generated code as the result
-            result = f"Generated code: {code}"
+            # Step 3: Test function calling (for now, manually test if we have functions)
+            function_results = []
+            if client_id in self.client_function_metadata and "add_numbers" in self.client_function_metadata[client_id]:
+                # Test calling the add_numbers function if available
+                try:
+                    func_result = await self.call_function(client_id, "add_numbers", {"a": 2, "b": 3})
+                    function_results.append(f"add_numbers(2, 3) = {func_result}")
+                    logger.info(f"Function call result: {func_result}")
+                except Exception as e:
+                    logger.error(f"Function call failed: {e}")
+                    function_results.append(f"add_numbers failed: {e}")
 
-            # Step 4: Handle any tool calls or QLM calls that the code needs
-            # TODO: Parse the code for function calls and execute them via callbacks
+            if client_id in self.client_function_metadata and "get_weather" in self.client_function_metadata[client_id]:
+                # Test calling the get_weather function if available
+                try:
+                    func_result = await self.call_function(client_id, "get_weather", {"city": "San Francisco"})
+                    function_results.append(f"get_weather('San Francisco') = {func_result}")
+                    logger.info(f"Function call result: {func_result}")
+                except Exception as e:
+                    logger.error(f"Function call failed: {e}")
+                    function_results.append(f"get_weather failed: {e}")
+
+            # Step 4: Combine code and function results
+            # TODO: Implement proper code execution with tool calls and QLM callbacks
+            result_parts = [f"Generated code: {code}"]
+            if function_results:
+                result_parts.append(f"Function test results: {', '.join(function_results)}")
+            result = "\n".join(result_parts)
 
             # Send response back to client
             response_message = {"type": "query_response", "result": result}
