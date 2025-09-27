@@ -123,7 +123,7 @@ def run_test():
     # Create runtime with our tools
     runtime = functions_runtime.FunctionsRuntime(task_suite.tools)
 
-    # Add AI assistant query function (same as original)
+    # Add AI assistant query function
     model = "claude-3-7-sonnet-20250219"
     _T = TypeVar("_T", bound=str | int | float | BaseModel)
 
