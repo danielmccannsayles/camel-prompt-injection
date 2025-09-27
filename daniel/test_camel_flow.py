@@ -2,10 +2,9 @@ import asyncio
 import logging
 
 import anthropic
+from locallms import LocalPLM, LocalQLM
 from server import CamelClient, CamelServer
 from server.base_models import JsonSchema, Message, make_error_messages
-
-from daniel.locallms import LocalPLM, LocalQLM
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
