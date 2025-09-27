@@ -1,9 +1,8 @@
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
-from typing import Any
 
+from .base_models import BasePLM, BaseQLM, JsonSchema, Message
 from .websocket_wrapper import WebSocketClient
 
 logging.basicConfig(level=logging.INFO)
@@ -15,8 +14,8 @@ class CamelClient:
 
     def __init__(
         self,
-        plm: Callable[[str], str],
-        qlm: Callable[[str, dict], Any],
+        plm: BasePLM,
+        qlm: BaseQLM,
         tools: list | None = None,
         server_host: str = "localhost",
         server_port: int = 8765,
@@ -25,8 +24,8 @@ class CamelClient:
         Initialize CamelClient.
 
         Args:
-            plm: Privileged LLM function that takes prompt (str) and returns response (str)
-            qlm: Quarantined LLM function that takes prompt (str) and schema (dict) and returns structured data
+            plm: Privileged LLM instance that takes message list and returns response
+            qlm: Quarantined LLM instance that takes prompt and schema and returns structured data
             tools: List of tools (TODO: define format)
             server_host: CamelServer host
             server_port: CamelServer port
@@ -66,9 +65,10 @@ class CamelClient:
 
             if message_type == "plm_call":
                 # Server is requesting a PLM call
-                prompt = data["prompt"]
+                message_dicts = data["messages"]
+                messages = [Message.from_dict(msg_dict) for msg_dict in message_dicts]
                 try:
-                    result = self.plm(prompt)
+                    result = self.plm(messages)
                     response = {"type": "plm_response", "result": result}
                 except Exception as e:
                     response = {"type": "plm_response", "error": str(e)}
@@ -77,7 +77,7 @@ class CamelClient:
             elif message_type == "qlm_call":
                 # Server is requesting a QLM call
                 prompt = data["prompt"]
-                output_schema = data["output_schema"]
+                output_schema: JsonSchema = data["output_schema"]
                 try:
                     result = self.qlm(prompt, output_schema)
                     response = {"type": "qlm_response", "result": result}

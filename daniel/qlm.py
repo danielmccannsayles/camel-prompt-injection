@@ -1,16 +1,19 @@
 """Quarantined Language Model with schema enforcement using Anthropic Claude."""
 
+from typing import Any
+
 import anthropic
+from server.base_models import BaseQLM, JsonSchema
 
 
-class QLM:
+class QLM(BaseQLM):
     """QLM using Anthropic Sonnet with dynamic schema enforcement."""
 
     def __init__(self, client=None, model="claude-3-5-sonnet-20241022"):
         self.client = client or anthropic.Anthropic()
         self.model = model
 
-    def __call__(self, prompt: str, schema: dict):
+    def __call__(self, prompt: str, schema: JsonSchema) -> Any:
         """Query the QLM with schema enforcement."""
         # Create dynamic tool from the provided schema
         tool = {

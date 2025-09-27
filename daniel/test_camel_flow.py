@@ -4,6 +4,7 @@ import logging
 import anthropic
 from qlm import QLM
 from server import CamelClient, CamelServer
+from server.base_models import BasePLM, BaseQLM, JsonSchema, Message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,22 +27,37 @@ async def test_camel_flow():
         # Initialize Anthropic client
         anthropic_client = anthropic.Anthropic()
 
-        # Define PLM and QLM functions
-        def my_plm(prompt: str) -> str:
+        # Define PLM class
+        class MyPLM(BasePLM):
             """PLM using Anthropic Sonnet to generate code."""
-            logger.info(f"PLM called with prompt: {prompt[:100]}...")
-            try:
-                response = anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022", max_tokens=1000, messages=[{"role": "user", "content": prompt}]
-                )
-                result = response.content[0].text
-                logger.info(f"PLM response: {result[:100]}...")
-                return result
-            except Exception as e:
-                logger.error(f"PLM error: {e}")
-                return f"Error in PLM: {e}"
 
-        # Create QLM using the simplified module
+            def __call__(self, messages: list[Message]) -> str:
+                logger.info(f"PLM called with {len(messages)} messages")
+                try:
+                    # Convert Message objects to Anthropic format
+                    anthropic_messages = []
+                    system_msg = None
+                    for msg in messages:
+                        if msg.role == "system":
+                            system_msg = msg.content
+                        else:
+                            anthropic_messages.append({"role": msg.role, "content": msg.content})
+
+                    response = anthropic_client.messages.create(
+                        system=system_msg or anthropic.NOT_GIVEN,
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=1000,
+                        messages=anthropic_messages,
+                    )
+                    result = response.content[0].text
+                    logger.info(f"PLM response: {result[:100]}...")
+                    return result
+                except Exception as e:
+                    logger.error(f"PLM error: {e}")
+                    return f"Error in PLM: {e}"
+
+        # Create instances
+        my_plm = MyPLM()
         my_qlm = QLM(anthropic_client)
 
         # Create client with same port as server
@@ -55,12 +71,12 @@ async def test_camel_flow():
 
         # Test QLM directly to verify dynamic schema enforcement
         logger.info("Testing QLM with basic math schema...")
-        math_schema = {
+        math_schema: JsonSchema = {
             "type": "object",
             "properties": {
                 "answer": {"type": "integer", "description": "The numerical answer"},
                 "explanation": {"type": "string", "description": "Brief explanation"},
-                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "confidence": {"type": "number"},
             },
             "required": ["answer", "explanation", "confidence"],
         }
@@ -71,7 +87,7 @@ async def test_camel_flow():
 
         # Test with different schema - invoice-like structure
         logger.info("Testing QLM with invoice schema...")
-        invoice_schema = {
+        invoice_schema: JsonSchema = {
             "type": "object",
             "properties": {
                 "invoice_number": {"type": "string", "description": "Invoice identifier"},

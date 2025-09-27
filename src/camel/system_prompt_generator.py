@@ -344,13 +344,16 @@ While generating the code, follow these rules:
 
 
 def default_system_prompt_generator(
-    functions: Iterable[functions_runtime.Function],
+    functions: Iterable[functions_runtime.Function] | None = None,
     classes_to_exclude: set[str] = set(),
 ) -> str:
     """Generates a system prompt with the provided functions."""
-    function_definitions = (function_to_python_definition(f) for f in functions)
+    pydantic_types_definitions = None
+    function_definitions = None
+    if functions:
+        function_definitions = (function_to_python_definition(f) for f in functions)
 
-    pydantic_types_definitions = get_pydantic_types_definitions(functions).values()
+        pydantic_types_definitions = get_pydantic_types_definitions(functions).values()
 
     types_note = (
         f"""
@@ -420,7 +423,7 @@ The following non-builtin classes are available:
 You have access to the following functions that allow you to use external tools:
 
 ```python
-{f"{_NEWLINE * 3}".join(function_definitions)}
+{f"{_NEWLINE * 3}".join(function_definitions) if function_definitions else ""}
 ```
 {types_note}
 {NOTES}
