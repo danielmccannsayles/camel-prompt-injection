@@ -4,7 +4,7 @@ import logging
 import anthropic
 from qlm import QLM
 from server import CamelClient, CamelServer
-from server.base_models import BasePLM, BaseQLM, JsonSchema, Message
+from server.base_models import BasePLM, BaseQLM, JsonSchema, Message, make_error_messages
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -69,6 +69,36 @@ async def test_camel_flow():
 
         logger.info(f"Received result: {result}")
 
+        # Test multi-message PLM handling
+        logger.info("Testing PLM with multiple messages...")
+        test_messages = [
+            Message(role="system", content="You are a helpful coding assistant."),
+            Message(role="user", content="Write Python code to calculate 5 * 3"),
+            Message(role="assistant", content="print(5 * 3)"),
+            Message(role="user", content="Good! Now add error handling to make it more robust."),
+        ]
+
+        multi_msg_result = my_plm(test_messages)
+        logger.info(f"Multi-message PLM result: {multi_msg_result[:100]}...")
+        print(f"Multi-message PLM Test: {multi_msg_result[:200]}...")
+
+        # Test error message format (simulating code execution failure)
+        logger.info("Testing PLM with error message format...")
+        broken_code = "print(5 / 0)"
+        error_msg = "ZeroDivisionError: division by zero"
+        error_messages = make_error_messages(broken_code, error_msg)
+
+        # Add system message and user query to simulate full context
+        full_error_context = [
+            Message(role="system", content="You are a helpful coding assistant."),
+            Message(role="user", content="Write Python code to calculate 5 divided by 0"),
+            *error_messages,
+        ]
+
+        error_fix_result = my_plm(full_error_context)
+        logger.info(f"Error fix PLM result: {error_fix_result[:100]}...")
+        print(f"Error Fix PLM Test: {error_fix_result[:200]}...")
+
         # Test QLM directly to verify dynamic schema enforcement
         logger.info("Testing QLM with basic math schema...")
         math_schema: JsonSchema = {
@@ -117,6 +147,8 @@ async def test_camel_flow():
 
         print("✅ Test completed successfully!")
         print(f"PLM Result: {result}")
+        print(f"Multi-message PLM Result: {multi_msg_result[:200]}...")
+        print(f"Error Fix PLM Result: {error_fix_result[:200]}...")
         print(f"QLM Math Result: {qlm_result1}")
         print(f"QLM Invoice Result: {qlm_result2}")
 
